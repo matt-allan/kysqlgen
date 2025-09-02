@@ -36,6 +36,7 @@ async function createIntrospector(config: Config): Promise<{
 		case "mysql2": {
 			const { db, introspector } = await createMysqlIntrospector(
 				config.dialectConfig,
+				config.introspectorOptions,
 			);
 
 			return { db, introspector };

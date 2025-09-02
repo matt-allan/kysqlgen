@@ -18,7 +18,10 @@ import type {
 	InformationSchema,
 } from "./information-schema.ts";
 
-export async function createMysqlIntrospector(config: MysqlDialectConfig) {
+export async function createMysqlIntrospector(
+	config: MysqlDialectConfig,
+	options: MysqlIntrospectorOptions = {},
+) {
 	const pool = await (typeof config.pool === "function"
 		? config.pool()
 		: Promise.resolve(config.pool));
@@ -30,7 +33,7 @@ export async function createMysqlIntrospector(config: MysqlDialectConfig) {
 		}),
 	});
 
-	const introspector = new MysqlIntrospector(db, pool as Pool);
+	const introspector = new MysqlIntrospector(db, pool as Pool, options);
 
 	return {
 		db,
