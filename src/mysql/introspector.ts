@@ -12,8 +12,11 @@ import type {
 	TableMetadata,
 	TsType,
 } from "../introspector.ts";
-import { getNativeType, isDataType } from "./data-types.ts";
-import type { InformationSchema } from "./information-schema.ts";
+import { type DataType, getNativeType } from "./data-types.ts";
+import type {
+	ColumnMetadata,
+	InformationSchema,
+} from "./information-schema.ts";
 
 export async function createMysqlIntrospector(config: MysqlDialectConfig) {
 	const pool = await (typeof config.pool === "function"
@@ -36,14 +39,27 @@ export async function createMysqlIntrospector(config: MysqlDialectConfig) {
 	};
 }
 
+export interface MysqlIntrospectorOptions {
+	/** A map of column or data type to native type to cast to */
+	casts?: Record<DataType | string, string>;
+	/** A map of table.column names to the JSON types to use. */
+	jsonTypes?: Record<string, string>;
+}
+
 export class MysqlIntrospector implements DatabaseIntrospector {
 	readonly #db: Kysely<InformationSchema>;
 	readonly #pool: Pool;
+	readonly #options: MysqlIntrospectorOptions;
 
-	// biome-ignore lint/suspicious/noExplicitAny: not needed here
-	constructor(db: Kysely<any>, pool: Pool) {
+	constructor(
+		// biome-ignore lint/suspicious/noExplicitAny: not needed here
+		db: Kysely<any>,
+		pool: Pool,
+		options: MysqlIntrospectorOptions = {},
+	) {
 		this.#db = db;
 		this.#pool = pool;
+		this.#options = options;
 	}
 
 	async getTables(): Promise<TableMetadata[]> {
@@ -54,19 +70,8 @@ export class MysqlIntrospector implements DatabaseIntrospector {
 					.onRef("COLUMNS.TABLE_SCHEMA", "=", "TABLES.TABLE_SCHEMA")
 					.onRef("COLUMNS.TABLE_NAME", "=", "TABLES.TABLE_NAME"),
 			)
-			.select([
-				"TABLES.TABLE_SCHEMA",
-				"TABLES.TABLE_NAME",
-				"TABLES.TABLE_TYPE",
-				"TABLES.TABLE_COMMENT",
-				"COLUMNS.COLUMN_NAME",
-				"COLUMNS.COLUMN_TYPE",
-				"COLUMNS.DATA_TYPE",
-				"COLUMNS.IS_NULLABLE",
-				"COLUMNS.COLUMN_DEFAULT",
-				"COLUMNS.EXTRA",
-				"COLUMNS.COLUMN_COMMENT",
-			])
+			.select(["TABLES.TABLE_TYPE", "TABLES.TABLE_COMMENT"])
+			.selectAll("COLUMNS")
 			.where("COLUMNS.TABLE_SCHEMA", "=", sql<string>`database()`)
 			.where("COLUMNS.TABLE_NAME", "!=", DEFAULT_MIGRATION_TABLE)
 			.where("COLUMNS.TABLE_NAME", "!=", DEFAULT_MIGRATION_LOCK_TABLE)
@@ -75,7 +80,6 @@ export class MysqlIntrospector implements DatabaseIntrospector {
 			.execute();
 
 		const tables = new Map<string, TableMetadata>();
-		const poolOpts = this.#poolOptions();
 
 		for (const row of rows) {
 			let table = tables.get(row.TABLE_NAME);
@@ -89,65 +93,7 @@ export class MysqlIntrospector implements DatabaseIntrospector {
 				tables.set(table.name, table);
 			}
 
-			const dataType = row.DATA_TYPE;
-
-			if (!isDataType(dataType)) {
-				throw new Error(
-					`Unknown MySQL data type ${dataType} for column ${table}.${row.COLUMN_NAME}`,
-				);
-			}
-
-			let tsType: Required<TsType> = {
-				type: getNativeType(dataType, poolOpts),
-				imports: [],
-			};
-
-			// Extract enum or set definitions
-			if (dataType === "enum" || dataType === "set") {
-				// Extract the list of values from inside the parens
-				const valuesSql = row.COLUMN_TYPE.substring(
-					dataType.length + 1,
-					row.COLUMN_TYPE.length - 1,
-				);
-
-				// Use SQL to re-select the value list, since this ensures MySQL
-				// will split and unescape the strings for us correctly.
-				const result = await sql`SELECT ${sql.raw(valuesSql)}`
-					.$castTo<Record<string, string>>()
-					.execute(this.#db);
-
-				const values = Object.values(result.rows[0] ?? {});
-
-				tsType.type = values.map((v) => `"${v}"`).join(" | ");
-			}
-
-			// Add the import for Buffer
-			if (tsType.type === "Buffer") {
-				tsType = {
-					type: "Buffer",
-					imports: [
-						{
-							moduleSpecifier: "node:buffer",
-							namedBindings: ["Buffer"],
-						},
-					],
-				};
-			}
-
-			// Apply any refinements from the column meta
-			if (row.IS_NULLABLE === "YES") {
-				tsType.type = `${tsType.type} | null`;
-			}
-			if (
-				row.COLUMN_DEFAULT !== null ||
-				row.EXTRA.toLowerCase().includes("auto_increment")
-			) {
-				tsType.type = `Generated<${tsType.type}>`;
-				tsType.imports.push({
-					moduleSpecifier: "kysely",
-					namedBindings: ["Generated"],
-				});
-			}
+			const tsType = await this.#getTsType(row);
 
 			table.columns.push({
 				name: row.COLUMN_NAME,
@@ -159,7 +105,90 @@ export class MysqlIntrospector implements DatabaseIntrospector {
 		return Array.from(tables.values());
 	}
 
-	#poolOptions(): PoolOptions {
+	async #getTsType(col: ColumnMetadata): Promise<TsType> {
+		const dataType = col.DATA_TYPE;
+
+		let nativeType = getNativeType(col.DATA_TYPE, this.#poolOptions);
+
+		const casts = this.#options.casts ?? {};
+		const columnTypeCast = casts[col.COLUMN_TYPE];
+		const dataTypeCast = casts[col.DATA_TYPE];
+
+		// Prefer the more specific column type cast
+		if (columnTypeCast) {
+			nativeType = columnTypeCast;
+		} else if (dataTypeCast) {
+			nativeType = dataTypeCast;
+		}
+
+		const tsType: TsType = {
+			type: nativeType,
+		};
+
+		// // Add the import for Buffer
+		if (nativeType === "Buffer") {
+			tsType.imports = [
+				{
+					moduleSpecifier: "node:buffer",
+					namedBindings: ["Buffer"],
+				},
+			];
+		}
+
+		// Extract enum or set definitions
+		if (dataType === "enum" || dataType === "set") {
+			// Extract the list of values from inside the parens
+			const valuesSql = col.COLUMN_TYPE.substring(
+				dataType.length + 1,
+				col.COLUMN_TYPE.length - 1,
+			);
+
+			// Use SQL to re-select the value list, since this ensures MySQL
+			// will split and unescape the strings for us correctly.
+			const result = await sql`SELECT ${sql.raw(valuesSql)}`
+				.$castTo<Record<string, string>>()
+				.execute(this.#db);
+
+			const values = Object.values(result.rows[0] ?? {});
+
+			tsType.type = values.map((v) => `"${v}"`).join(" | ");
+		}
+
+		// Apply any refinements from the column meta
+		if (col.IS_NULLABLE === "YES") {
+			tsType.type = `${tsType.type} | null`;
+		}
+
+		let jsonType: string | undefined;
+		if (dataType === "json") {
+			jsonType =
+				this.#options?.jsonTypes?.[`${col.TABLE_NAME}.${col.COLUMN_NAME}`];
+		}
+
+		// Wrap the base type with a column type
+		if (jsonType) {
+			tsType.type = `JSONColumnType<${jsonType}>`;
+			tsType.imports ??= [];
+			tsType.imports.push({
+				moduleSpecifier: "kysely",
+				namedBindings: ["JSONColumnType"],
+			});
+		} else if (
+			col.COLUMN_DEFAULT !== null ||
+			col.EXTRA.toLowerCase().includes("auto_increment")
+		) {
+			tsType.type = `Generated<${tsType.type}>`;
+			tsType.imports ??= [];
+			tsType.imports.push({
+				moduleSpecifier: "kysely",
+				namedBindings: ["Generated"],
+			});
+		}
+
+		return tsType;
+	}
+
+	get #poolOptions(): PoolOptions {
 		return this.#pool.config;
 	}
 }

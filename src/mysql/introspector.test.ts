@@ -12,6 +12,8 @@ interface TestTable {
 	varchar_str: string;
 	json_str: unknown;
 	enum_list: "foo" | "bar";
+	big_num: bigint;
+	bool_flag: boolean;
 }
 
 interface TestDB {
@@ -28,6 +30,8 @@ async function migrate(db: Kysely<any>) {
 		.addColumn("varchar_str", "varchar(200)", (col) => col.notNull())
 		.addColumn("json_str", "json", (col) => col.notNull())
 		.addColumn("enum_list", sql`enum('foo', 'bar')`, (col) => col.notNull())
+		.addColumn("big_num", "bigint", (col) => col.notNull())
+		.addColumn("bool_flag", "boolean", (col) => col.notNull())
 		.modifyEnd(
 			sql`ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
 		)
@@ -41,7 +45,21 @@ test("MysqlIntrospector", async (t) => {
 		return;
 	}
 
-	const pool = createPool({ uri });
+	const pool = createPool({
+		uri,
+		bigNumberStrings: true,
+		supportBigNumbers: true,
+		typeCast: (field, next) => {
+			if (field.type === "TINY" && field.length === 1) {
+				return field.string() === "1"; // 1 = true, 0 = false
+			} else if (field.type === "LONGLONG") {
+				const s = field.string();
+				return s === null ? null : BigInt(s);
+			} else {
+				return next();
+			}
+		},
+	});
 
 	const config = {
 		pool,
@@ -51,7 +69,15 @@ test("MysqlIntrospector", async (t) => {
 
 	await migrate(db);
 
-	const introspector = new MysqlIntrospector(db, pool);
+	const introspector = new MysqlIntrospector(db, pool, {
+		casts: {
+			bigint: "bigint",
+			"tinyint(1)": "boolean",
+		},
+		jsonTypes: {
+			"introspect_tests.json_str": "Array<number>",
+		},
+	});
 
 	await t.test("getTables", async () => {
 		const tables = await introspector.getTables();
@@ -70,6 +96,8 @@ test("MysqlIntrospector", async (t) => {
 				varchar_str: "hello world",
 				json_str: "[1,2,3]",
 				enum_list: "foo",
+				big_num: 100n,
+				bool_flag: true,
 			})
 			.executeTakeFirstOrThrow();
 
@@ -86,9 +114,9 @@ test("MysqlIntrospector", async (t) => {
 		}> = [
 			{
 				name: "id",
-				type: "number",
+				type: "bigint",
 				tsType: {
-					type: "Generated<number>",
+					type: "Generated<bigint>",
 					imports: [
 						{ moduleSpecifier: "kysely", namedBindings: ["Generated"] },
 					],
@@ -102,22 +130,34 @@ test("MysqlIntrospector", async (t) => {
 			{
 				name: "json_str",
 				type: (v) => Array.isArray(v),
-				tsType: { type: "unknown" },
+				tsType: {
+					type: "JSONColumnType<Array<number>>",
+					imports: [
+						{ moduleSpecifier: "kysely", namedBindings: ["JSONColumnType"] },
+					],
+				},
 			},
 			{
 				name: "enum_list",
 				type: "string",
 				tsType: { type: `"foo" | "bar"` },
 			},
+			{
+				name: "big_num",
+				type: "bigint",
+				tsType: { type: `bigint` },
+			},
+			{
+				name: "bool_flag",
+				type: "boolean",
+				tsType: { type: `boolean` },
+			},
 		];
 
 		for (const { name, type, tsType } of expectedColumns) {
 			const col = columns.get(name);
 			assert(col);
-			assert.deepStrictEqual(col.tsType, {
-				...tsType,
-				imports: tsType.imports ?? [],
-			});
+			assert.deepStrictEqual(col.tsType, tsType);
 			if (typeof type === "string") {
 				assert.equal(
 					typeof row[name],

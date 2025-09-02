@@ -46,7 +46,7 @@ export class ImportCollection {
 			typeImport = {
 				moduleSpecifier,
 			};
-      this.#imports.set(typeImport.moduleSpecifier, typeImport);
+			this.#imports.set(typeImport.moduleSpecifier, typeImport);
 		}
 
 		typeImport.namedBindings ??= new Set();
@@ -62,7 +62,7 @@ export class ImportCollection {
 			typeImport = {
 				moduleSpecifier,
 			};
-      this.#imports.set(typeImport.moduleSpecifier, typeImport);
+			this.#imports.set(typeImport.moduleSpecifier, typeImport);
 		}
 
 		if (typeImport.defaultImport && typeImport.defaultImport !== name) {

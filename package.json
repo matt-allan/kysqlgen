@@ -1,6 +1,6 @@
 {
 	"name": "kysqlgen",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"type": "module",
 	"description": "Generate Kysely types for MySQL",
 	"repository": {
@@ -37,14 +37,14 @@
 	},
 	"scripts": {
 		"clean": "tsc --clean",
-    "check-types": "tsc --noEmit",
+		"check-types": "tsc --noEmit",
 		"build": "tsc",
 		"format": "biome format --fix",
 		"lint": "biome lint",
 		"test": "node --env-file-if-exists=.env --test",
 		"fix": "biome check --write",
-    "prepare": "npm run build",
-    "prepublishOnly": "npm run check-types && npm run lint"
+		"prepare": "npm run build",
+		"prepublishOnly": "npm run check-types && npm run lint"
 	},
 	"dependencies": {
 		"inflected": "^2.1.0"

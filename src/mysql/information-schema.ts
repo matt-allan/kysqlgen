@@ -1,3 +1,6 @@
+import type { Selectable } from "kysely";
+import type { DataType } from "./data-types.ts";
+
 /**
  * A Database type defining the information schema tables needed for
  * code generation.
@@ -49,7 +52,7 @@ export interface ColumnsTable {
 	ORDINAL_POSITION: number;
 	COLUMN_DEFAULT: string | null;
 	IS_NULLABLE: "YES" | "NO";
-	DATA_TYPE: string;
+	DATA_TYPE: DataType;
 	CHARACTER_MAXIMUM_LENGTH: bigint | null;
 	CHARACTER_OCTET_LENGTH: bigint | null;
 	NUMERIC_PRECISION: bigint | null;
@@ -64,3 +67,5 @@ export interface ColumnsTable {
 	COLUMN_COMMENT: string;
 	GENERATION_EXPRESSION: string;
 }
+
+export type ColumnMetadata = Selectable<ColumnsTable>;

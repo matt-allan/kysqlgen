@@ -5,7 +5,7 @@ import type { PoolOptions } from "mysql2";
  *
  * @see https://dev.mysql.com/doc/refman/9.4/en/data-types.html
  */
-type DataType =
+export type DataType =
 	// Numeric
 	| "tinyint"
 	| "smallint"
