@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { CONFIG_FILENAME, loadConfig, locateConfig } from "./config.ts";
 import { generateTypes } from "./generate.ts";
+import { BIN_NAME } from "./package.ts";
 
 export async function cli(args: string[]): Promise<number> {
 	const { values } = parseArgs({
@@ -26,7 +27,7 @@ export async function cli(args: string[]): Promise<number> {
 	});
 
 	if (values.help) {
-		const helpText = `Usage: kysqlgen [OPTIONS]
+		const helpText = `Usage: ${BIN_NAME} [OPTIONS]
 
 Available options:
 

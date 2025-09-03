@@ -3,9 +3,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { MysqlDialectConfig } from "kysely";
 import type { MysqlIntrospectorOptions } from "./mysql/introspector.ts";
+import { PKG_NAME } from "./package.ts";
 import type { PrinterOptions } from "./printer.ts";
 
-export const CONFIG_FILENAME = "kysqlgen.config.ts";
+export const CONFIG_FILENAME = `${PKG_NAME}.config.ts`;
 
 export interface Config {
 	dialect: "mysql2";

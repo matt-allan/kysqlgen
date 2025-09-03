@@ -81,14 +81,17 @@ export class ImportCollection {
 			.filter((imp) => imp.defaultImport || imp.namedBindings?.size)
 			.map((imp) => ({
 				...imp,
-				namedBindings: imp.namedBindings?.values()
-          .toArray()
-          .toSorted((a, b) => importName(a).localeCompare(importName(b))) ?? [],
+				namedBindings:
+					imp.namedBindings
+						?.values()
+						.toArray()
+						.toSorted((a, b) => importName(a).localeCompare(importName(b))) ??
+					[],
 			}))
 			.toSorted((a, b) => a.moduleSpecifier.localeCompare(b.moduleSpecifier));
 	}
 }
 
 function importName(specifier: ImportSpecifier): string {
-  return typeof specifier === "string" ? specifier : specifier.name;
+	return typeof specifier === "string" ? specifier : specifier.name;
 }

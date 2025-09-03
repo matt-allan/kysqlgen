@@ -9,7 +9,7 @@ This package generates a TypeScript type declaration file from your database by 
 The generated output looks like this:
 
 ```typescript
-import type { Generated, Selectable, Insertable, Updateable } from "kysely";
+import type { Generated, Insertable, Selectable, Updateable } from "kysely";
 
 export interface Database {
   addresses: AddressTable;
