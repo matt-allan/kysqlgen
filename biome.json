@@ -6,6 +6,7 @@
 		"useIgnoreFile": true
 	},
 	"files": {
+		"includes": ["src/**/*.ts", "*.ts", "*.json"],
 		"ignoreUnknown": false
 	},
 	"formatter": {
@@ -30,5 +31,16 @@
 				"organizeImports": "on"
 			}
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["tsconfig.json", ".vscode/**"],
+			"json": {
+				"parser": {
+					"allowComments": true,
+					"allowTrailingCommas": true
+				}
+			}
+		}
+	]
 }

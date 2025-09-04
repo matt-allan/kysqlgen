@@ -1,5 +1,5 @@
 import type { Selectable } from "kysely";
-import type { DataType } from "./data-types.ts";
+import type { DataType } from "./mysql-data-types.ts";
 
 /**
  * A Database type defining the information schema tables needed for
@@ -37,6 +37,8 @@ export interface TablesTable {
 	TABLE_TYPE: "BASE TABLE" | "VIEW" | "SYSTEM VIEW";
 	TABLE_COMMENT: string;
 }
+
+export type TableMetadata = Selectable<TablesTable>;
 
 /**
  * Defines the `INFORMATION_SCHEMA.COLUMNS` table.

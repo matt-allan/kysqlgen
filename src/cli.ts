@@ -1,8 +1,8 @@
 import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
+import pkg from "./../package.json" with { type: "json" };
 import { CONFIG_FILENAME, loadConfig, locateConfig } from "./config.ts";
 import { generateTypes } from "./generate.ts";
-import { BIN_NAME } from "./package.ts";
 
 export async function cli(args: string[]): Promise<number> {
 	const { values } = parseArgs({
@@ -27,7 +27,7 @@ export async function cli(args: string[]): Promise<number> {
 	});
 
 	if (values.help) {
-		const helpText = `Usage: ${BIN_NAME} [OPTIONS]
+		const helpText = `Usage: ${Object.keys(pkg.bin)[0]} [OPTIONS]
 
 Available options:
 

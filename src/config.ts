@@ -1,20 +1,45 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { MysqlDialectConfig } from "kysely";
-import type { MysqlIntrospectorOptions } from "./mysql/introspector.ts";
-import { PKG_NAME } from "./package.ts";
+import {
+	Kysely,
+	MysqlDialect,
+	type MysqlDialectConfig,
+	SqliteDialect,
+	type SqliteDialectConfig,
+} from "kysely";
+import type { Pool } from "mysql2";
+import pkg from "./../package.json" with { type: "json" };
+import {
+	MysqlTypeCollector,
+	type MysqlTypeOptions,
+} from "./mysql/mysql-collector.ts";
+import { MysqlIntrospector } from "./mysql/mysql-introspector.ts";
 import type { PrinterOptions } from "./printer.ts";
+import { SqliteCollector } from "./sqlite/sqlite-collector.ts";
+import type { TypeCollector } from "./type-collector.ts";
 
-export const CONFIG_FILENAME = `${PKG_NAME}.config.ts`;
+export const CONFIG_FILENAME = `${pkg.name}.config.ts`;
 
-export interface Config {
-	dialect: "mysql2";
-	dialectConfig: MysqlDialectConfig;
-	introspectorOptions?: MysqlIntrospectorOptions;
+type BaseConfig = {
 	outFile?: string;
 	printerOptions?: PrinterOptions;
-}
+};
+
+type MysqlConfig = {
+	dialect: "mysql2";
+	dialectConfig: MysqlDialectConfig;
+	typeOptions?: MysqlTypeOptions;
+};
+
+type SqliteConfig = {
+	dialect: "better-sqlite3";
+	dialectConfig: SqliteDialectConfig;
+};
+
+type DialectConfig = MysqlConfig | SqliteConfig;
+
+export type Config = BaseConfig & DialectConfig;
 
 export function defineConfig(input: Config): Config {
 	return input;
@@ -35,10 +60,15 @@ export function locateConfig(cwd?: string): string | null {
 	let lastDir: string | undefined;
 
 	while (dir !== lastDir) {
-		const filename = path.join(dir, CONFIG_FILENAME);
-		if (existsSync(filename)) {
-			return filename;
+		for (const filename of [
+			path.join(dir, CONFIG_FILENAME),
+			path.join(dir, ".config", CONFIG_FILENAME),
+		]) {
+			if (existsSync(filename)) {
+				return filename;
+			}
 		}
+
 		lastDir = dir;
 		dir = path.resolve(dir, "..");
 	}
@@ -53,5 +83,49 @@ function validateConfig(value: unknown): asserts value is Config {
 
 	if (!Object.hasOwn(value, "dialect")) {
 		throw new Error("Missing config dialect");
+	}
+}
+
+export async function resolveConfig(
+	config: Config,
+	// biome-ignore lint/suspicious/noExplicitAny: required here
+): Promise<{ db: Kysely<any>; typeCollector: TypeCollector }> {
+	const { dialect, dialectConfig } = config;
+
+	switch (dialect) {
+		case "mysql2": {
+			const pool = await (typeof dialectConfig.pool === "function"
+				? dialectConfig.pool()
+				: Promise.resolve(dialectConfig.pool));
+
+			const db = new Kysely({
+				dialect: new MysqlDialect({
+					...dialectConfig,
+					pool,
+				}),
+			}).withoutPlugins();
+
+			const typeCollector = new MysqlTypeCollector(
+				new MysqlIntrospector(db),
+				(pool as Pool).config,
+				config.typeOptions,
+			);
+			return { db, typeCollector };
+		}
+		case "better-sqlite3": {
+			const db = new Kysely({
+				dialect: new SqliteDialect(dialectConfig),
+			}).withoutPlugins();
+
+			return {
+				db,
+				typeCollector: new SqliteCollector(db.introspection),
+			};
+		}
+
+		default:
+			throw new Error(
+				`Unknown dialect ${(config as { dialect: string }).dialect}`,
+			);
 	}
 }

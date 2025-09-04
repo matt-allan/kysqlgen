@@ -1,25 +1,23 @@
 import { classify } from "inflected";
-import type { Kysely } from "kysely";
-import type { Config } from "./config.ts";
+import { type Config, resolveConfig } from "./config.ts";
 import { ImportCollection } from "./imports.ts";
-import type { DatabaseIntrospector, TableMetadata } from "./introspector.ts";
-import { createMysqlIntrospector } from "./mysql/introspector.ts";
 import {
 	type Declaration,
 	type ImportDeclaration,
 	type InterfaceDeclaration,
 	Printer,
 } from "./printer.ts";
+import type { TableMetadata } from "./type-collector.ts";
 
 /**
  * Generate types based on the given configuration.
  */
 export async function generateTypes(config: Config): Promise<string> {
-	const { db, introspector } = await createIntrospector(config);
+	const { db, typeCollector } = await resolveConfig(config);
 
-	const tableMeta = await introspector.getTables();
+	const tables = await typeCollector.collectTables();
 
-	const declarations = collectTypes(tableMeta);
+	const declarations = assembleTypes(tables);
 
 	const output = new Printer(config.printerOptions).print(declarations);
 
@@ -28,28 +26,11 @@ export async function generateTypes(config: Config): Promise<string> {
 	return output;
 }
 
-async function createIntrospector(config: Config): Promise<{
-	db: Kysely<unknown>;
-	introspector: DatabaseIntrospector;
-}> {
-	switch (config.dialect) {
-		case "mysql2": {
-			const { db, introspector } = await createMysqlIntrospector(
-				config.dialectConfig,
-				config.introspectorOptions,
-			);
-
-			return { db, introspector };
-		}
-		default:
-			throw new Error(`Unsupported dialect ${config.dialect}`);
-	}
-}
-
 /**
- * Collect the table metadata into declarations for generated type definition file.
+ * Assemble the type declarations for the Kysely Database interface and all
+ * table types.
  */
-function collectTypes(tableMeta: TableMetadata[]): Declaration[] {
+export function assembleTypes(tables: TableMetadata[]): Declaration[] {
 	const imports = new ImportCollection();
 	const declarations: Declaration[] = [];
 
@@ -62,7 +43,7 @@ function collectTypes(tableMeta: TableMetadata[]): Declaration[] {
 	declarations.push(dbType);
 
 	// Map every table
-	for (const table of tableMeta) {
+	for (const table of tables) {
 		const className = classify(table.name);
 		const tableType: InterfaceDeclaration = {
 			kind: "interface",
@@ -79,16 +60,18 @@ function collectTypes(tableMeta: TableMetadata[]): Declaration[] {
 
 		// Map the table's columns
 		for (const column of table.columns) {
-			const tsType = column.tsType;
+			const {
+				name,
+				columnType: { type, imports: typeImports },
+				comment,
+			} = column;
 
-			if (tsType.imports) {
-				imports.add(...tsType.imports);
-			}
+			imports.add(...(typeImports ?? []));
 
 			tableType.properties.push({
-				name: column.name,
-				type: tsType.type,
-				comment: column.comment,
+				name,
+				type,
+				comment,
 			});
 		}
 

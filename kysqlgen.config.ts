@@ -7,7 +7,7 @@ export default defineConfig({
 		pool: createPool(process.env.MYSQL_URI ?? ""),
 	},
 	outFile: "db.d.ts",
-	printerOptions: {
+	printer: {
 		indentStyle: "space",
 		indentWidth: 2,
 		semicolons: true,

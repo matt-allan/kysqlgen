@@ -1,9 +1,11 @@
 import assert from "node:assert";
-import test from "node:test";
+import test, { after, before } from "node:test";
 import { type Generated, Kysely, MysqlDialect, sql } from "kysely";
 import { createPool } from "mysql2";
-import type { ColumnMetadata, TsType } from "../introspector.ts";
-import { MysqlIntrospector } from "./introspector.ts";
+import { Type } from "../type.ts";
+import type { ColumnMetadata } from "../type-collector.ts";
+import { MysqlTypeCollector } from "./mysql-collector.ts";
+import { MysqlIntrospector } from "./mysql-introspector.ts";
 
 const tableName = "introspect_tests" as const;
 
@@ -13,6 +15,7 @@ interface TestTable {
 	json_str: unknown;
 	enum_list: "foo" | "bar";
 	big_num: bigint;
+	uint: number;
 	bool_flag: boolean;
 }
 
@@ -31,6 +34,7 @@ async function migrate(db: Kysely<any>) {
 		.addColumn("json_str", "json", (col) => col.notNull())
 		.addColumn("enum_list", sql`enum('foo', 'bar')`, (col) => col.notNull())
 		.addColumn("big_num", "bigint", (col) => col.notNull())
+		.addColumn("uint", "integer", (col) => col.unsigned().notNull())
 		.addColumn("bool_flag", "boolean", (col) => col.notNull())
 		.modifyEnd(
 			sql`ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
@@ -67,20 +71,22 @@ test("MysqlIntrospector", async (t) => {
 
 	const db = new Kysely<TestDB>({ dialect: new MysqlDialect(config) });
 
-	await migrate(db);
+	before(async () => migrate(db));
+	after(async () => db.destroy());
 
-	const introspector = new MysqlIntrospector(db, pool, {
-		casts: {
-			bigint: "bigint",
-			"tinyint(1)": "boolean",
+	const introspector = new MysqlIntrospector(db);
+	const collector = new MysqlTypeCollector(introspector, pool.config, {
+		typeCasts: {
+			"tinyint(1)": Type.boolean,
+			bigint: Type.bigint,
 		},
-		jsonTypes: {
-			"introspect_tests.json_str": "Array<number>",
+		jsonColumns: {
+			[`${tableName}.json_str`]: Type.array(Type.number),
 		},
 	});
 
 	await t.test("getTables", async () => {
-		const tables = await introspector.getTables();
+		const tables = await collector.collectTables();
 
 		const testTable = tables.find((tbl) => tbl.name === tableName);
 
@@ -97,6 +103,7 @@ test("MysqlIntrospector", async (t) => {
 				json_str: "[1,2,3]",
 				enum_list: "foo",
 				big_num: 100n,
+				uint: 123,
 				bool_flag: true,
 			})
 			.executeTakeFirstOrThrow();
@@ -109,66 +116,59 @@ test("MysqlIntrospector", async (t) => {
 
 		const expectedColumns: Array<{
 			name: keyof TestTable;
-			type: string | ((v: unknown) => boolean);
-			tsType: TsType;
+			runtimeType: string;
+			tsType: Type;
 		}> = [
 			{
 				name: "id",
-				type: "bigint",
-				tsType: {
-					type: "Generated<bigint>",
-					imports: [
-						{ moduleSpecifier: "kysely", namedBindings: ["Generated"] },
-					],
-				},
+				runtimeType: "bigint",
+				tsType: Type.Generated(Type.bigint),
 			},
 			{
 				name: "varchar_str",
-				type: "string",
-				tsType: { type: "string" },
+				runtimeType: "string",
+				tsType: Type.string,
 			},
 			{
 				name: "json_str",
-				type: (v) => Array.isArray(v),
-				tsType: {
-					type: "JSONColumnType<Array<number>>",
-					imports: [
-						{ moduleSpecifier: "kysely", namedBindings: ["JSONColumnType"] },
-					],
-				},
+				runtimeType: "array",
+				tsType: Type.JSONColumnType(Type.array(Type.number)),
 			},
 			{
 				name: "enum_list",
-				type: "string",
-				tsType: { type: `"foo" | "bar"` },
+				runtimeType: "string",
+				tsType: Type.union(
+					Type.stringLiteral("foo"),
+					Type.stringLiteral("bar"),
+				),
 			},
 			{
 				name: "big_num",
-				type: "bigint",
-				tsType: { type: `bigint` },
+				runtimeType: "bigint",
+				tsType: Type.bigint,
+			},
+			{
+				name: "uint",
+				runtimeType: "number",
+				tsType: Type.number,
 			},
 			{
 				name: "bool_flag",
-				type: "boolean",
-				tsType: { type: `boolean` },
+				runtimeType: "boolean",
+				tsType: Type.boolean,
 			},
 		];
 
-		for (const { name, type, tsType } of expectedColumns) {
+		for (const { name, runtimeType, tsType } of expectedColumns) {
 			const col = columns.get(name);
 			assert(col);
-			assert.deepStrictEqual(col.tsType, tsType);
-			if (typeof type === "string") {
-				assert.equal(
-					typeof row[name],
-					type,
-					`Unexpected column type for ${col.name}`,
-				);
+			assert.deepStrictEqual(col.columnType, tsType);
+			const msg = `Expected type ${runtimeType} for column ${col.name}, got ${typeof row[name]}`;
+			if (runtimeType === "array") {
+				assert(Array.isArray(row[name]), msg);
 			} else {
-				assert(type(row[name]), `Unexpected column type for ${col.name}`);
+				assert.equal(typeof row[name], runtimeType, msg);
 			}
 		}
 	});
-
-	await db.destroy();
 });
