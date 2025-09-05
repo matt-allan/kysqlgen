@@ -13,13 +13,13 @@ import type { TableMetadata } from "./type-collector.ts";
  * Generate types based on the given configuration.
  */
 export async function generateTypes(config: Config): Promise<string> {
-	const { db, typeCollector } = await resolveConfig(config);
+	const { db, typeCollector, printerOptions = {} } = await resolveConfig(config);
 
 	const tables = await typeCollector.collectTables();
 
 	const declarations = assembleTypes(tables);
 
-	const output = new Printer(config.printerOptions).print(declarations);
+	const output = new Printer(printerOptions).print(declarations);
 
 	await db.destroy();
 

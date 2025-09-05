@@ -41,6 +41,12 @@ type DialectConfig = MysqlConfig | SqliteConfig;
 
 export type Config = BaseConfig & DialectConfig;
 
+export type ResolvedConfig = BaseConfig & {
+  // biome-ignore lint/suspicious/noExplicitAny: required here
+  db: Kysely<any>;
+  typeCollector: TypeCollector
+}
+
 export function defineConfig(input: Config): Config {
 	return input;
 }
@@ -88,8 +94,7 @@ function validateConfig(value: unknown): asserts value is Config {
 
 export async function resolveConfig(
 	config: Config,
-	// biome-ignore lint/suspicious/noExplicitAny: required here
-): Promise<{ db: Kysely<any>; typeCollector: TypeCollector }> {
+): Promise<ResolvedConfig> {
 	const { dialect, dialectConfig } = config;
 
 	switch (dialect) {
