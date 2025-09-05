@@ -122,7 +122,7 @@ test("MysqlIntrospector", async (t) => {
 			{
 				name: "id",
 				runtimeType: "bigint",
-				tsType: Type.Generated(Type.bigint),
+				tsType: Type.generated(Type.bigint),
 			},
 			{
 				name: "varchar_str",
@@ -132,7 +132,7 @@ test("MysqlIntrospector", async (t) => {
 			{
 				name: "json_str",
 				runtimeType: "array",
-				tsType: Type.JSONColumnType(Type.array(Type.number)),
+				tsType: Type.jsonColumnType(Type.array(Type.number)),
 			},
 			{
 				name: "enum_list",

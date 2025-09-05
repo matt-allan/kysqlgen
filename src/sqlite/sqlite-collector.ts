@@ -64,7 +64,7 @@ function columnAffinity(dataType: string): DataType {
 const DATA_TYPE_MAP: Record<DataType, Type> = {
 	INTEGER: Type.number,
 	TEXT: Type.string,
-	BLOB: Type.Buffer,
+	BLOB: Type.buffer,
 	REAL: Type.number,
 	NUMERIC: Type.number,
 };
@@ -79,7 +79,7 @@ function getColumnType(col: ColumnMetadata): Type {
 	}
 
 	if (col.isAutoIncrementing || col.hasDefaultValue) {
-		type = Type.Generated(type);
+		type = Type.generated(type);
 	}
 
 	return type;

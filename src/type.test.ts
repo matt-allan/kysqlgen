@@ -38,18 +38,18 @@ test("Type", () => {
 		nullable: [Type.nullable(Type.number), `number | null`],
 		optional: [Type.optional(Type.number), `number | undefined`],
 		imported: [Type.imported("Buffer", "node:buffer"), `Buffer`],
-		buffer: [Type.Buffer, `Buffer`],
+		buffer: [Type.buffer, `Buffer`],
 		ColumnType: [
-			Type.ColumnType(Type.unknown, Type.string),
+			Type.columnType(Type.unknown, Type.string),
 			`ColumnType<unknown, string>`,
 		],
 		JSONColumnType: [
-			Type.JSONColumnType(Type.unknown),
+			Type.jsonColumnType(Type.unknown),
 			`JSONColumnType<unknown>`,
 		],
-		Generated: [Type.Generated(Type.bigint), `Generated<bigint>`],
+		Generated: [Type.generated(Type.bigint), `Generated<bigint>`],
 		GeneratedAlways: [
-			Type.GeneratedAlways(Type.bigint),
+			Type.generatedAlways(Type.bigint),
 			`GeneratedAlways<bigint>`,
 		],
 	};
