@@ -1,7 +1,12 @@
 import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import pkg from "./../package.json" with { type: "json" };
-import { CONFIG_FILENAME, loadConfig, locateConfig } from "./config.ts";
+import {
+	CONFIG_FILENAME,
+	loadConfig,
+	locateConfig,
+	resolveConfig,
+} from "./config.ts";
 import { generateTypes } from "./generate.ts";
 
 export async function cli(args: string[]): Promise<number> {
@@ -50,13 +55,19 @@ Available options:
 
 	const config = await loadConfig(configPath);
 
-	const output = await generateTypes(config);
+	const { db, dialect, outFile, printerOptions } = await resolveConfig(config);
+
+	const typeCollector = dialect.createTypeCollector(db);
+
+	const output = await generateTypes(typeCollector, printerOptions);
 
 	if (values.write) {
-		await writeFile(config.outFile ?? "db.d.ts", output, "utf-8");
+		await writeFile(outFile ?? "db.d.ts", output, "utf-8");
 	} else {
 		process.stdout.write(output);
 	}
+
+	await db.destroy();
 
 	return 0;
 }

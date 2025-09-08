@@ -1,12 +1,15 @@
 import type { ColumnMetadata, DatabaseIntrospector } from "kysely";
 import { Type } from "../type.ts";
 import type { TableMetadata, TypeCollector } from "../type-collector.ts";
+import type { DatabaseConfig, SqliteConfig } from "./sqlite-config.ts";
 
 export class SqliteCollector implements TypeCollector {
 	#introspector: DatabaseIntrospector;
+	#config: SqliteConfig;
 
-	constructor(introspector: DatabaseIntrospector) {
+	constructor(introspector: DatabaseIntrospector, config: SqliteConfig = {}) {
 		this.#introspector = introspector;
+		this.#config = config;
 	}
 
 	async collectTables(): Promise<TableMetadata[]> {
@@ -20,9 +23,34 @@ export class SqliteCollector implements TypeCollector {
 			columns: table.columns.map((column) => ({
 				name: column.name,
 				dataType: column.dataType,
-				columnType: getColumnType(column),
+				columnType: this.#getColumnType(table.name, column),
 			})),
 		}));
+	}
+
+	#getColumnType(table: string, col: ColumnMetadata): Type {
+		const dataType = columnAffinity(col.dataType);
+
+		const value = DATA_TYPE_MAP[dataType];
+		let type =
+			typeof value === "function"
+				? value(this.#config.databaseConfig ?? {})
+				: value;
+
+		const castType = this.#config?.columnCasts?.[`${table}.${col.name}`];
+		if (castType) {
+			type = castType;
+		}
+
+		if (col.isNullable) {
+			type = Type.nullable(type);
+		}
+
+		if (col.isAutoIncrementing || col.hasDefaultValue) {
+			type = Type.generated(type);
+		}
+
+		return type;
 	}
 }
 
@@ -61,26 +89,17 @@ function columnAffinity(dataType: string): DataType {
 	return "NUMERIC";
 }
 
-const DATA_TYPE_MAP: Record<DataType, Type> = {
-	INTEGER: Type.number,
+type TypeFn = (config: DatabaseConfig) => Type;
+
+/**
+ * @see https://github.com/WiseLibs/better-sqlite3/blob/master/docs/api.md
+ * @see https://github.com/WiseLibs/better-sqlite3/blob/master/docs/integer.md
+ */
+const DATA_TYPE_MAP: Record<DataType, Type | TypeFn> = {
+	INTEGER: ({ defaultSafeIntegers }) =>
+		defaultSafeIntegers ? Type.bigint : Type.number,
 	TEXT: Type.string,
 	BLOB: Type.buffer,
 	REAL: Type.number,
 	NUMERIC: Type.number,
 };
-
-function getColumnType(col: ColumnMetadata): Type {
-	const dataType = columnAffinity(col.dataType);
-
-	let type = DATA_TYPE_MAP[dataType];
-
-	if (col.isNullable) {
-		type = Type.nullable(type);
-	}
-
-	if (col.isAutoIncrementing || col.hasDefaultValue) {
-		type = Type.generated(type);
-	}
-
-	return type;
-}

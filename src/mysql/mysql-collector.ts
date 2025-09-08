@@ -1,42 +1,19 @@
-import type { PoolOptions } from "mysql2";
-import {
-	Generated,
-	GeneratedAlways,
-	isColumnType,
-	JSONColumnType,
-	Type,
-} from "../type.ts";
+import { isColumnType, Type } from "../type.ts";
 import type { TableMetadata, TypeCollector } from "../type-collector.ts";
+import type { MysqlConfig } from "./mysql-config.ts";
 import { type ColumnDataType, getNativeType } from "./mysql-data-types.ts";
 import type {
 	MysqlColumnMetadata,
 	MysqlIntrospector,
 } from "./mysql-introspector.ts";
 
-export interface MysqlTypeOptions {
-	typeCasts?: {
-		[K in ColumnDataType]?: Type;
-	};
-	/**
-	 * A map of table qualified column names to types to use for JSON columns.
-	 * The type will be used instead of `unknown` as the select type.
-	 */
-	jsonColumns?: Record<`${string}.${string}`, Type>;
-}
-
 export class MysqlTypeCollector implements TypeCollector {
 	#introspector: MysqlIntrospector;
-	#poolConfig: PoolOptions;
-	#options: MysqlTypeOptions;
+	#config: MysqlConfig;
 
-	constructor(
-		introspector: MysqlIntrospector,
-		poolConfig: PoolOptions,
-		options: MysqlTypeOptions = {},
-	) {
+	constructor(introspector: MysqlIntrospector, config: MysqlConfig = {}) {
 		this.#introspector = introspector;
-		this.#poolConfig = poolConfig;
-		this.#options = options;
+		this.#config = config;
 	}
 
 	async collectTables(): Promise<TableMetadata[]> {
@@ -66,15 +43,15 @@ export class MysqlTypeCollector implements TypeCollector {
 		}
 
 		if (col.isVirtual) {
-			return new GeneratedAlways(type);
+			return Type.generatedAlways(type);
 		}
 
 		if (col.isAutoIncrementing) {
-			return new Generated(type);
+			return Type.generated(type);
 		}
 
 		if (col.dataType === "json") {
-			return new JSONColumnType(
+			return Type.jsonColumnType(
 				type,
 				// If the column has a default value, we need to explicitly use
 				// `string | undefined` for the insert type. Otherwise we can use
@@ -84,7 +61,7 @@ export class MysqlTypeCollector implements TypeCollector {
 		}
 
 		if (col.hasDefaultValue) {
-			return new Generated(type);
+			return Type.generated(type);
 		}
 
 		return type;
@@ -96,15 +73,15 @@ export class MysqlTypeCollector implements TypeCollector {
 
 		// Check for an explicit data type cast
 		const cast =
-			this.#options?.typeCasts?.[columnType] ??
-			this.#options?.typeCasts?.[dataType];
+			this.#config?.typeCasts?.[columnType] ??
+			this.#config?.typeCasts?.[dataType];
 		if (cast) {
 			return cast;
 		}
 
 		// Check for a more precise JSON type
 		if (dataType === "json") {
-			const jsonType = this.#options?.jsonColumns?.[`${table}.${col.name}`];
+			const jsonType = this.#config?.jsonColumns?.[`${table}.${col.name}`];
 			if (jsonType) {
 				return jsonType;
 			}
@@ -119,7 +96,7 @@ export class MysqlTypeCollector implements TypeCollector {
 		}
 
 		// Fallback to the default mapping for the driver
-		return getNativeType(dataType, this.#poolConfig);
+		return getNativeType(dataType, this.#config.poolConfig);
 	}
 }
 

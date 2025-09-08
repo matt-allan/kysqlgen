@@ -271,6 +271,7 @@ const undefinedType = createType("undefined");
 const nullType = createType("null");
 
 export const Type = {
+	create: createType,
 	number: createType("number"),
 	string: createType("string"),
 	boolean: createType("boolean"),

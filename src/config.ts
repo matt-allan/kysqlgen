@@ -8,16 +8,19 @@ import {
 	SqliteDialect,
 	type SqliteDialectConfig,
 } from "kysely";
-import type { Pool } from "mysql2";
 import pkg from "./../package.json" with { type: "json" };
-import {
-	MysqlTypeCollector,
-	type MysqlTypeOptions,
-} from "./mysql/mysql-collector.ts";
-import { MysqlIntrospector } from "./mysql/mysql-introspector.ts";
+import type { Dialect } from "./dialect.ts";
+import type {
+	MysqlConfig as MysqlTypeConfig,
+	PoolConfig,
+} from "./mysql/mysql-config.ts";
+import { MysqlDialect as MysqlTypeDialect } from "./mysql/mysql-dialect.ts";
 import type { PrinterOptions } from "./printer.ts";
-import { SqliteCollector } from "./sqlite/sqlite-collector.ts";
-import type { TypeCollector } from "./type-collector.ts";
+import {
+	loadDatabaseConfig,
+	type SqliteConfig as SqliteTypeConfig,
+} from "./sqlite/sqlite-config.ts";
+import { SqliteDialect as SqliteTypeDialect } from "./sqlite/sqlite-dialect.ts";
 
 export const CONFIG_FILENAME = `${pkg.name}.config.ts`;
 
@@ -29,23 +32,23 @@ type BaseConfig = {
 type MysqlConfig = {
 	dialect: "mysql2";
 	dialectConfig: MysqlDialectConfig;
-	typeOptions?: MysqlTypeOptions;
+	typeConfig?: MysqlTypeConfig;
 };
 
 type SqliteConfig = {
 	dialect: "better-sqlite3";
 	dialectConfig: SqliteDialectConfig;
+	typeConfig?: SqliteTypeConfig;
 };
 
 type DialectConfig = MysqlConfig | SqliteConfig;
-
 export type Config = BaseConfig & DialectConfig;
 
 export type ResolvedConfig = BaseConfig & {
-  // biome-ignore lint/suspicious/noExplicitAny: required here
-  db: Kysely<any>;
-  typeCollector: TypeCollector
-}
+	// biome-ignore lint/suspicious/noExplicitAny: no schema
+	db: Kysely<any>;
+	dialect: Dialect;
+};
 
 export function defineConfig(input: Config): Config {
 	return input;
@@ -92,42 +95,55 @@ function validateConfig(value: unknown): asserts value is Config {
 	}
 }
 
-export async function resolveConfig(
-	config: Config,
-): Promise<ResolvedConfig> {
-	const { dialect, dialectConfig } = config;
+export async function resolveConfig(config: Config): Promise<ResolvedConfig> {
+	const { dialect, outFile, printerOptions } = config;
+
+	const baseConfig: BaseConfig = {
+		outFile,
+		printerOptions,
+	};
 
 	switch (dialect) {
 		case "mysql2": {
-			const pool = await (typeof dialectConfig.pool === "function"
-				? dialectConfig.pool()
-				: Promise.resolve(dialectConfig.pool));
-
-			const db = new Kysely({
+			// Resolve the pool so we can access the pool config
+			const pool =
+				typeof config.dialectConfig.pool === "function"
+					? await config.dialectConfig.pool()
+					: config.dialectConfig.pool;
+			const dialect = new MysqlTypeDialect({
+				...config.typeConfig,
+				// The pool is really the "mysql2" pool type so this is safe
+				poolConfig: (pool as unknown as { config: PoolConfig }).config,
+			});
+			// biome-ignore lint/suspicious/noExplicitAny: no schema
+			const db = new Kysely<any>({
 				dialect: new MysqlDialect({
-					...dialectConfig,
+					...config.dialectConfig,
 					pool,
 				}),
-			}).withoutPlugins();
-
-			const typeCollector = new MysqlTypeCollector(
-				new MysqlIntrospector(db),
-				(pool as Pool).config,
-				config.typeOptions,
-			);
-			return { db, typeCollector };
-		}
-		case "better-sqlite3": {
-			const db = new Kysely({
-				dialect: new SqliteDialect(dialectConfig),
-			}).withoutPlugins();
-
+			});
 			return {
+				dialect,
 				db,
-				typeCollector: new SqliteCollector(db.introspection),
+				...baseConfig,
 			};
 		}
-
+		case "better-sqlite3": {
+			// biome-ignore lint/suspicious/noExplicitAny: no schema
+			const db = new Kysely<any>({
+				dialect: new SqliteDialect(config.dialectConfig),
+			});
+			const databaseConfig = await loadDatabaseConfig(db);
+			const dialect = new SqliteTypeDialect({
+				...config.typeConfig,
+				databaseConfig,
+			});
+			return {
+				dialect,
+				db,
+				...baseConfig,
+			};
+		}
 		default:
 			throw new Error(
 				`Unknown dialect ${(config as { dialect: string }).dialect}`,

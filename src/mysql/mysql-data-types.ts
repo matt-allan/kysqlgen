@@ -1,5 +1,5 @@
-import type { PoolOptions } from "mysql2";
 import { Type } from "../type.ts";
+import type { PoolConfig } from "./mysql-config.ts";
 
 type IntDataType = "tinyint" | "smallint" | "int" | "mediumint" | "bigint";
 
@@ -65,7 +65,7 @@ export type ColumnDataType =
 	// String
 	| `${"char" | "varchar" | "binary" | "varbinary" | "blob" | "text"}(${number})`;
 
-type TypeFn = (dateType: string, opts: PoolOptions) => Type;
+type TypeFn = (dateType: string, opts: PoolConfig) => Type;
 
 const dateStrings: TypeFn = (dataType, { dateStrings }) => {
 	const asString = Array.isArray(dateStrings)
@@ -153,10 +153,7 @@ export function isDataType(type: string): type is DataType {
 /**
  * Get the native JavaScript type for the given MySQL data type and pool options.
  */
-export function getNativeType(
-	dataType: DataType,
-	opts: PoolOptions = {},
-): Type {
+export function getNativeType(dataType: DataType, opts: PoolConfig = {}): Type {
 	const nativeType = DATA_TYPE_MAP[dataType];
 
 	if (!nativeType) {

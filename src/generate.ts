@@ -1,27 +1,26 @@
 import { classify } from "inflected";
-import { type Config, resolveConfig } from "./config.ts";
 import { ImportCollection } from "./imports.ts";
 import {
 	type Declaration,
 	type ImportDeclaration,
 	type InterfaceDeclaration,
 	Printer,
+	type PrinterOptions,
 } from "./printer.ts";
-import type { TableMetadata } from "./type-collector.ts";
+import type { TableMetadata, TypeCollector } from "./type-collector.ts";
 
 /**
  * Generate types based on the given configuration.
  */
-export async function generateTypes(config: Config): Promise<string> {
-	const { db, typeCollector, printerOptions = {} } = await resolveConfig(config);
-
+export async function generateTypes(
+	typeCollector: TypeCollector,
+	printerOptions: PrinterOptions = {},
+): Promise<string> {
 	const tables = await typeCollector.collectTables();
 
 	const declarations = assembleTypes(tables);
 
 	const output = new Printer(printerOptions).print(declarations);
-
-	await db.destroy();
 
 	return output;
 }

@@ -7,10 +7,10 @@ import type { ColumnMetadata } from "../type-collector.ts";
 import { MysqlTypeCollector } from "./mysql-collector.ts";
 import { MysqlIntrospector } from "./mysql-introspector.ts";
 
-const tableName = "introspect_tests" as const;
+const tableName = "mysql_tests" as const;
 
 interface TestTable {
-	id: Generated<number>;
+	id: Generated<bigint>;
 	varchar_str: string;
 	json_str: unknown;
 	enum_list: "foo" | "bar";
@@ -75,7 +75,7 @@ test("MysqlIntrospector", async (t) => {
 	after(async () => db.destroy());
 
 	const introspector = new MysqlIntrospector(db);
-	const collector = new MysqlTypeCollector(introspector, pool.config, {
+	const collector = new MysqlTypeCollector(introspector, {
 		typeCasts: {
 			"tinyint(1)": Type.boolean,
 			bigint: Type.bigint,
@@ -83,6 +83,7 @@ test("MysqlIntrospector", async (t) => {
 		jsonColumns: {
 			[`${tableName}.json_str`]: Type.array(Type.number),
 		},
+		poolConfig: pool.config,
 	});
 
 	await t.test("getTables", async () => {
@@ -111,7 +112,8 @@ test("MysqlIntrospector", async (t) => {
 		const row = await db
 			.selectFrom(tableName)
 			.selectAll()
-			.where("id", "=", Number(insertId))
+			// biome-ignore lint/style/noNonNullAssertion: always exists for inserts
+			.where("id", "=", insertId!)
 			.executeTakeFirstOrThrow();
 
 		const expectedColumns: Array<{
